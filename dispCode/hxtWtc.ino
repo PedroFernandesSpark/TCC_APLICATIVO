@@ -10,9 +10,7 @@
 #include <BLE2902.h>
 
 GyverOLED<SSH1106_128x64> oled;
-Adafruit_AHTX0 aht;
 MAX30105 particleSensor;
-Adafruit_BMP280 bmp;
 
 float t = 0.0, h = 0.0, pressure = 0.0;
 int buttonPin = 0;
@@ -47,7 +45,7 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 void setup() {
     Serial.begin(115200);
-    BLEDevice::init("HEXTECH_WATCH");
+    BLEDevice::init("TCC_WATCH");
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
 
@@ -67,7 +65,7 @@ void setup() {
     oled.clear();
     oled.setScale(2);
     oled.setCursor(18, 2);
-    oled.print("HEXTECH");
+    oled.print("TCC");
     oled.setCursor(22, 5);
     oled.print("WATCH");
     oled.update();
@@ -93,6 +91,7 @@ void loop() {
       Serial.println("CONECTADO");
       delay(500);
         String rxData = pHeartRateCharacteristic->getValue();
+
         if (rxData.length() > 0) {
             int freq = atoi(rxData.c_str());
             if (freq > 0) {
@@ -142,11 +141,11 @@ void loop() {
 }
 
 void initSensors() {
-    while (!aht.begin()) {
-        displayError("AHTX0 Error", "Reconnecting...");
-        delay(2000);
-    }
-    displayMessage("AHTX0 Connected");
+    // while (!aht.begin()) {
+    //     displayError("AHTX0 Error", "Reconnecting...");
+    //     delay(2000);
+    // }
+    // displayMessage("AHTX0 Connected");
 
     while (!particleSensor.begin()) {
         displayError("MAX30102 Error!", "Reconnecting...");
@@ -156,11 +155,11 @@ void initSensors() {
     particleSensor.setup();
     particleSensor.setPulseAmplitudeRed(0x0A);
 
-    while (!bmp.begin(0x76)) {
-        displayError("BMP280 Error", "Reconnecting...");
-        delay(2000);
-    }
-    displayMessage("BMP280 Connected");
+    // while (!bmp.begin(0x76)) {
+    //     displayError("BMP280 Error", "Reconnecting...");
+    //     delay(2000);
+    // }
+    // displayMessage("BMP280 Connected");
 }
 
 void displayMessage(const char* message) {

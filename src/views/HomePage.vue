@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar color="primary">
-        <ion-title class="ion-text-center">HEXTECH 0.9.2</ion-title>
+        <ion-title class="ion-text-center">HEXTECH 1.0.2</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -252,7 +252,7 @@ export default {
       this.isMeasuring = true;
 
       this.measurementInterval = setInterval(async () => {
-        const { chart, bpm } = await this.calculateHeartRateWavelet();
+        const { chart, bpm } = await this.calculateHeartRate();
         if (chart) {
           this.heartRateCharts.push(chart);
           this.heartRateOverTime.push(bpm);
@@ -367,7 +367,7 @@ export default {
       this.chartData.datasets[0].data = filteredData.map(item => item.value);
       this.render = true;
     },
-    async calculateHeartRateWavelet() {
+    async calculateHeartRate() {
       const now = Date.now();
       const windowMs = Math.max(this.config.tamanhoJanela * 1000, 8000);
       const windowStart = now - windowMs;
@@ -384,7 +384,6 @@ export default {
 
       let smoothWindowSize = 7;
       if (samplesPerSecond >= 80) smoothWindowSize = 8;
-      smoothWindowSize = Math.max(5, smoothWindowSize);
 
       const smoothed = rawValues.map((_, i, arr) => {
         const start = Math.max(i - Math.floor(smoothWindowSize / 2), 0);
@@ -472,7 +471,7 @@ export default {
       const graphIntervalMs = 1000;
 
       const interval = setInterval(async () => {
-        const { chart, bpm } = await this.calculateHeartRateWavelet();
+        const { chart, bpm } = await this.calculateHeartRate();
         if (chart) {
           this.heartRateCharts.push(chart);
           this.heartRateOverTime.push(bpm);
@@ -515,79 +514,116 @@ export default {
         }
       });
     },
-    exportChartsToPDF() {
-      this.isExporting = true;
+exportChartsToPDF() {
+  this.isExporting = true;
 
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4'
+  const pdf = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const width = pdf.internal.pageSize.getWidth();
+  const height = pdf.internal.pageSize.getHeight();
+  const charts = [...this.heartRateCharts, this.chartData];
+
+  const renderChartToImage = (chartConfig) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2000;
+      canvas.height = 500;
+
+      const ctx = canvas.getContext('2d');
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: chartConfig,
+        options: {
+          responsive: false,
+          animation: false,
+          plugins: {
+            legend: { display: true }
+          },
+          scales: {
+            x: { display: true },
+            y: { display: true }
+          }
+        }
       });
 
-      const width = pdf.internal.pageSize.getWidth();
-      const height = pdf.internal.pageSize.getHeight();
-      const charts = [...this.heartRateCharts, this.chartData];
+      setTimeout(() => {
+        const image = canvas.toDataURL('image/jpeg', 0.8);
+        chart.destroy();
+        canvas.remove();
+        resolve(image);
+      }, 300);
+    });
+  };
 
-      const renderChartToImage = (chartConfig) => {
-        return new Promise((resolve) => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 2000;
-          canvas.height = 500;
+  const exportAll = async () => {
+    try {
+      // 1) Gerar o PDF dos gráficos
+      for (let i = 0; i < charts.length; i++) {
+        const image = await renderChartToImage(charts[i]);
+        if (i > 0) pdf.addPage();
+        pdf.addImage(image, 'JPEG', 0, 0, width, height, undefined, 'FAST');
+      }
 
-          const ctx = canvas.getContext('2d');
-          const chart = new Chart(ctx, {
-            type: 'line',
-            data: chartConfig,
-            options: {
-              responsive: false,
-              animation: false,
-              plugins: {
-                legend: { display: true }
-              },
-              scales: {
-                x: { display: true },
-                y: { display: true }
-              }
-            }
-          });
+      const pdfDataUri = pdf.output('datauristring');
+      const pdfBase64 = pdfDataUri.split(',')[1];
 
-          setTimeout(() => {
-            const image = canvas.toDataURL('image/jpeg', 0.8);
-            chart.destroy();
-            canvas.remove();
-            resolve(image);
-          }, 300);
-        });
-      };
+      // 2) Salvar o PDF em External
+      await Filesystem.writeFile({
+        path: 'graficos_frequencia.pdf',
+        data: pdfBase64,
+        directory: Directory.External
+      });
 
-      const exportAll = async () => {
-        for (let i = 0; i < charts.length; i++) {
-          const image = await renderChartToImage(charts[i]);
-          if (i > 0) pdf.addPage();
-          pdf.addImage(image, 'JPEG', 0, 0, width, height, undefined, 'FAST');
-        }
+      // 3) Montar o CSV com os dados brutos
+      const csvRows = ['timestamp,value'];
+      this.array.forEach(item => {
+        csvRows.push(`${item.timestamp},${item.value}`);
+      });
+      const csvContent = csvRows.join('\n');
 
-        const pdfDataUri = pdf.output('datauristring');
-        const base64Data = pdfDataUri.split(',')[1];
+      // 4) Salvar o CSV em External
+      await Filesystem.writeFile({
+        path: 'dados_brutos.csv',
+        data: csvContent,
+        directory: Directory.External,
+        encoding: Encoding.UTF8
+      });
 
-        try {
-          await Filesystem.writeFile({
-            path: 'graficos_frequencia.pdf',
-            data: base64Data,
-            directory: Directory.Documents
-          });
+      // 5) Obter as URIs reais para debug / exibir
+      const { uri: pdfUri } = await Filesystem.getUri({
+        path: 'graficos_frequencia.pdf',
+        directory: Directory.External
+      });
 
-          alert('PDF salvo com sucesso em Documentos!');
-        } catch (err) {
-          console.error('Erro ao salvar PDF:', err);
-          alert('Falha ao salvar PDF.');
-        } finally {
-          this.isExporting = false;
-        }
-      };
+      const { uri: csvUri } = await Filesystem.getUri({
+        path: 'dados_brutos.csv',
+        directory: Directory.External
+      });
 
-      exportAll();
-    },
+      console.log("PDF:", pdfUri);
+      console.log("CSV:", csvUri);
+
+      alert(
+        "Arquivos salvos:\n\n" +
+        "PDF:\n" + pdfUri + "\n\n" +
+        "CSV:\n" + csvUri
+      );
+
+    } catch (err) {
+      console.error('Erro ao exportar PDF/CSV:', err);
+      alert('Falha ao exportar PDF/CSV.');
+    } finally {
+      this.isExporting = false;
+    }
+  };
+
+  exportAll();
+},
+
 
     startReading() {
       if (!this.deviceId) return;
